@@ -88,13 +88,22 @@ ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "server.js"]
 
 # Stage 5: Security scanning stage (for CI/CD pipeline)
-FROM production AS security-scan
+FROM base AS security-scan
 
-# Add Trivy scanner for vulnerability assessment
+# Install Trivy as root user before switching to nodejs user
+USER root
 RUN apk add --no-cache wget && \
     wget -qO- https://github.com/aquasecurity/trivy/releases/latest/download/trivy_Linux-64bit.tar.gz | tar xz -C /tmp && \
     mv /tmp/trivy /usr/local/bin/ && \
+    chmod +x /usr/local/bin/trivy && \
     trivy --version
+
+# Copy the application from production stage
+COPY --from=production --chown=nodejs:nodejs /app /app
+WORKDIR /app
+
+# Switch back to nodejs user for security
+USER nodejs
 
 # Metadata for image lifecycle management
 LABEL org.opencontainers.image.created=${BUILD_TIME}
