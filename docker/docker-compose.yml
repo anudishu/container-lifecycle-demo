@@ -1,0 +1,164 @@
+# Docker Compose for Container Lifecycle Management POC
+version: '3.8'
+
+services:
+  # Main application service
+  app:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+      target: production
+      args:
+        - BUILD_TIME=${BUILD_TIME:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}
+        - GIT_COMMIT=${GIT_COMMIT:-unknown}
+        - VERSION=${VERSION:-1.0.0}
+        - IMAGE_TAG=${IMAGE_TAG:-latest}
+    container_name: container-lifecycle-demo
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    networks:
+      - app-network
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.app.rule=Host(`localhost`)"
+      - "traefik.http.services.app.loadbalancer.server.port=3000"
+      - "lifecycle.stage=runtime"
+      - "security.scanned=true"
+
+  # Development service with hot reloading
+  app-dev:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+      target: dev-dependencies
+    container_name: container-lifecycle-demo-dev
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+    volumes:
+      - ../app:/app
+      - /app/node_modules
+    networks:
+      - app-network
+    command: npm run dev
+    profiles:
+      - development
+
+  # Security scanner service
+  scanner:
+    image: aquasec/trivy:latest
+    container_name: security-scanner
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ../reports:/reports
+    networks:
+      - app-network
+    profiles:
+      - security
+    command: >
+      sh -c "
+        trivy image --format sarif --output /reports/trivy-report.sarif container-lifecycle-demo:latest &&
+        trivy image --format json --output /reports/trivy-report.json container-lifecycle-demo:latest &&
+        trivy image --severity HIGH,CRITICAL container-lifecycle-demo:latest
+      "
+
+  # Load balancer for production-like environment
+  traefik:
+    image: traefik:v3.0
+    container_name: load-balancer
+    command:
+      - --api.insecure=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --log.level=INFO
+    ports:
+      - "80:80"
+      - "8080:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - app-network
+    profiles:
+      - loadbalancer
+
+  # Monitoring stack
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - app-network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - app-network
+    profiles:
+      - monitoring
+
+networks:
+  app-network:
+    driver: bridge
+    name: container-lifecycle-network
+
+volumes:
+  prometheus_data:
+    name: prometheus_data
+  grafana_data:
+    name: grafana_data
+
+# Health checks and lifecycle management
+x-common-healthcheck: &common-healthcheck
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s
+
+x-security-opts: &security-opts
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL

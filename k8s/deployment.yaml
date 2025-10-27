@@ -1,0 +1,242 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: container-lifecycle-demo
+  namespace: container-lifecycle-demo
+  labels:
+    app: container-lifecycle-demo
+    version: v1.0.0
+    lifecycle.stage: runtime
+    security.scanned: "true"
+    compliance.validated: "true"
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    description: "Container lifecycle management demonstration application"
+    security.policy: "restricted"
+    image.policy: "signed-only"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: container-lifecycle-demo
+  template:
+    metadata:
+      labels:
+        app: container-lifecycle-demo
+        version: v1.0.0
+        lifecycle.stage: runtime
+        security.policy: restricted
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "3000"
+        container.apparmor.security.beta.kubernetes.io/container-lifecycle-demo: runtime/default
+    spec:
+      # Security Context for Pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: "OnRootMismatch"
+        seccompProfile:
+          type: RuntimeDefault
+      
+      # Service Account with minimal permissions
+      serviceAccountName: container-lifecycle-demo-sa
+      automountServiceAccountToken: false
+      
+      # Node selection and affinity
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - container-lifecycle-demo
+              topologyKey: kubernetes.io/hostname
+      
+      # Termination grace period
+      terminationGracePeriodSeconds: 30
+      
+      # DNS Policy
+      dnsPolicy: ClusterFirst
+      
+      containers:
+      - name: container-lifecycle-demo
+        image: gcr.io/probable-cove-474504-p0/container-lifecycle-demo:latest
+        imagePullPolicy: Always
+        
+        # Security Context for Container
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          runAsGroup: 1001
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        
+        # Resource limits and requests
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+            ephemeral-storage: "1Gi"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+            ephemeral-storage: "2Gi"
+        
+        # Container ports
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        
+        # Environment variables
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        - name: K8S_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: K8S_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: K8S_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: SECURITY_SCANNED
+          value: "true"
+        - name: COMPLIANCE_STATUS
+          value: "validated"
+        
+        # Volume mounts
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: var-cache
+          mountPath: /var/cache
+        - name: app-logs
+          mountPath: /app/logs
+        
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        
+        readinessProbe:
+          httpGet:
+            path: /readiness
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
+        
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
+          successThreshold: 1
+        
+        # Lifecycle hooks
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
+      
+      # Init containers for setup
+      initContainers:
+      - name: init-setup
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "Initializing container lifecycle demo..."
+          mkdir -p /shared/logs
+          chmod 755 /shared/logs
+          echo "Setup completed"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          runAsGroup: 1001
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: app-logs
+          mountPath: /shared/logs
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+      
+      # Volumes
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 1Gi
+      - name: var-cache
+        emptyDir:
+          sizeLimit: 512Mi
+      - name: app-logs
+        emptyDir:
+          sizeLimit: 1Gi
+      
+      # Image pull secrets
+      imagePullSecrets:
+      - name: gcr-json-key
+      
+      # Topology spread constraints
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: container-lifecycle-demo

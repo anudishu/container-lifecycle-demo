@@ -1,0 +1,166 @@
+# Container Structure Test Configuration
+# Tests container security and compliance requirements
+
+schemaVersion: "2.0.0"
+
+# Metadata tests
+metadataTest:
+  # Check for required labels
+  labels:
+    - key: "org.opencontainers.image.title"
+      value: "Container Lifecycle Demo"
+    - key: "lifecycle.stage"
+      value: "runtime"
+    - key: "security.scanned"
+      value: "true"
+  
+  # Check environment variables
+  env:
+    - key: "NODE_ENV"
+      value: "production"
+    - key: "PORT"
+      value: "3000"
+  
+  # Verify exposed ports
+  exposedPorts: ["3000/tcp"]
+  
+  # Check volumes
+  volumes: ["/tmp", "/var/cache", "/app/logs"]
+  
+  # Check working directory
+  workdir: "/app"
+  
+  # Check user
+  user: "1001"
+
+# Command tests
+commandTests:
+  # Test application starts correctly
+  - name: "Application starts"
+    command: ["node", "--version"]
+    expectedOutput: ["v18.*"]
+
+  # Test health endpoint responds
+  - name: "Health endpoint test"
+    setup: [["timeout", "30", "sh", "-c", "node server.js &"]]
+    command: ["curl", "-f", "http://localhost:3000/health"]
+    expectedOutput: ["healthy"]
+    expectedError: []
+
+  # Test security configurations
+  - name: "Non-root user test"
+    command: ["whoami"]
+    expectedOutput: ["nodejs"]
+    excludedOutput: ["root"]
+
+  # Test file permissions
+  - name: "File permissions test"
+    command: ["find", "/app", "-type", "f", "-perm", "/002"]
+    expectedOutput: []
+
+  # Test no setuid/setgid binaries
+  - name: "No setuid binaries"
+    command: ["find", "/", "-perm", "/6000", "-type", "f", "2>/dev/null"]
+    expectedOutput: []
+    exitCode: 0
+
+  # Test package vulnerabilities (if npm is available)
+  - name: "NPM audit test"
+    command: ["npm", "audit", "--audit-level=high"]
+    exitCode: 0
+
+# File existence tests
+fileExistenceTests:
+  # Required application files
+  - name: "Application files exist"
+    path: "/app/server.js"
+    shouldExist: true
+
+  - name: "Package.json exists"
+    path: "/app/package.json"
+    shouldExist: true
+
+  # Security: Ensure no sensitive files
+  - name: "No SSH keys"
+    path: "/root/.ssh"
+    shouldExist: false
+
+  - name: "No .env files"
+    path: "/app/.env"
+    shouldExist: false
+
+  # Check for security tools
+  - name: "Curl available for health checks"
+    path: "/usr/bin/curl"
+    shouldExist: true
+
+# File content tests
+fileContentTests:
+  # Check package.json for security
+  - name: "Package.json security check"
+    path: "/app/package.json"
+    expectedContents: ["helmet", "express"]
+    excludedContents: ["nodemon"]
+
+  # Check no hardcoded secrets
+  - name: "No hardcoded passwords in server.js"
+    path: "/app/server.js"
+    excludedContents: ["password", "secret", "token"]
+
+# License tests
+licenseTests:
+  # Check for proper licensing
+  - debian: false
+    files: []
+
+# Security and vulnerability tests
+customTests:
+  # Test 1: Verify Alpine package updates
+  - name: "Alpine package updates"
+    command: ["apk", "list", "--upgradable"]
+    expectedOutput: []
+    
+  # Test 2: Check for common vulnerabilities
+  - name: "No world-writable files"
+    command: ["find", "/", "-type", "f", "-perm", "-002", "2>/dev/null"]
+    expectedOutput: []
+    
+  # Test 3: Verify dumb-init is present
+  - name: "Dumb-init present"
+    command: ["which", "dumb-init"]
+    exitCode: 0
+    
+  # Test 4: Check process limits
+  - name: "Ulimit check"
+    command: ["sh", "-c", "ulimit -n"]
+    expectedOutput: ["1024"]
+    
+  # Test 5: Verify no development tools
+  - name: "No development tools"
+    command: ["which", "gcc"]
+    exitCode: 1
+    
+  - name: "No build tools"
+    command: ["which", "make"]
+    exitCode: 1
+
+# Structure tests for multi-stage build verification
+structureTests:
+  # Verify minimal image size (approximate)
+  - name: "Image size check"
+    command: ["du", "-sh", "/"]
+    expectedOutput: ["*M\t/"]  # Should be in MB range, not GB
+    
+  # Verify layer count (multi-stage should be efficient)
+  - name: "Efficient layering"
+    command: ["df", "-h"]
+    expectedOutput: ["*"]
+    
+  # Check for leftover build artifacts
+  - name: "No build cache"
+    path: "/root/.npm"
+    shouldExist: false
+    
+  - name: "No source maps"
+    command: ["find", "/app", "-name", "*.map", "2>/dev/null"]
+    expectedOutput: []

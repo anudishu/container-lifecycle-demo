@@ -1,0 +1,143 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: container-lifecycle-demo-service
+  namespace: container-lifecycle-demo
+  labels:
+    app: container-lifecycle-demo
+    version: v1.0.0
+    lifecycle.stage: runtime
+  annotations:
+    service.beta.kubernetes.io/load-balancer-source-ranges: "0.0.0.0/0"
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"default": "container-lifecycle-demo-backendconfig"}'
+spec:
+  type: ClusterIP
+  sessionAffinity: None
+  selector:
+    app: container-lifecycle-demo
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: container-lifecycle-demo-headless
+  namespace: container-lifecycle-demo
+  labels:
+    app: container-lifecycle-demo
+    service-type: headless
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: container-lifecycle-demo
+  ports:
+  - name: http
+    port: 3000
+    targetPort: http
+    protocol: TCP
+---
+# Load Balancer Service for external access
+apiVersion: v1
+kind: Service
+metadata:
+  name: container-lifecycle-demo-lb
+  namespace: container-lifecycle-demo
+  labels:
+    app: container-lifecycle-demo
+    service-type: loadbalancer
+  annotations:
+    cloud.google.com/load-balancer-type: "External"
+    networking.gke.io/load-balancer-type: "External"
+spec:
+  type: LoadBalancer
+  loadBalancerSourceRanges:
+  - 0.0.0.0/0
+  selector:
+    app: container-lifecycle-demo
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+---
+# Backend Configuration for GCP
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: container-lifecycle-demo-backendconfig
+  namespace: container-lifecycle-demo
+spec:
+  healthCheck:
+    checkIntervalSec: 15
+    timeoutSec: 10
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    type: HTTP
+    requestPath: /health
+    port: 3000
+  connectionDraining:
+    drainingTimeoutSec: 60
+  logging:
+    enable: true
+    sampleRate: 1.0
+  securityPolicy:
+    name: "container-lifecycle-security-policy"
+---
+# Ingress for HTTP/HTTPS access
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: container-lifecycle-demo-ingress
+  namespace: container-lifecycle-demo
+  labels:
+    app: container-lifecycle-demo
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.global-static-ip-name: "container-lifecycle-ip"
+    networking.gke.io/managed-certificates: "container-lifecycle-ssl"
+    ingress.gcp.kubernetes.io/frontend-config: "container-lifecycle-frontend-config"
+    cloud.google.com/backend-config: '{"default": "container-lifecycle-demo-backendconfig"}'
+    ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  rules:
+  - host: container-lifecycle-demo.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: container-lifecycle-demo-service
+            port:
+              number: 80
+  tls:
+  - hosts:
+    - container-lifecycle-demo.example.com
+    secretName: container-lifecycle-tls
+---
+# Managed Certificate for GCP
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: container-lifecycle-ssl
+  namespace: container-lifecycle-demo
+spec:
+  domains:
+  - container-lifecycle-demo.example.com
+---
+# Frontend Configuration for GCP
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: container-lifecycle-frontend-config
+  namespace: container-lifecycle-demo
+spec:
+  sslPolicy: "container-lifecycle-ssl-policy"
+  redirectToHttps:
+    enabled: true
+    responseCodeName: MOVED_PERMANENTLY_DEFAULT

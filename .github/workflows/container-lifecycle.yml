@@ -1,0 +1,284 @@
+name: Container Lifecycle Management
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Weekly vulnerability scan
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+        - development
+        - staging
+        - production
+      force_deploy:
+        description: 'Force deployment even if security issues found'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || 'probable-cove-474504-p0' }}
+  GKE_CLUSTER: container-lifecycle-cluster
+  GKE_ZONE: us-central1-a
+  DEPLOYMENT_NAME: container-lifecycle-demo
+  IMAGE: container-lifecycle-demo
+  REGISTRY: gcr.io
+
+jobs:
+  # Stage 1: Source Code Analysis and Security
+  code-analysis:
+    name: Code Analysis & Security Scan
+    runs-on: ubuntu-latest
+    outputs:
+      security-passed: ${{ steps.security-gate.outputs.passed }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: app/package-lock.json
+
+    - name: Install dependencies
+      working-directory: ./app
+      run: |
+        npm ci
+        
+    - name: Run security audit
+      working-directory: ./app
+      run: |
+        npm audit --audit-level=high
+        
+    - name: Run tests with coverage
+      working-directory: ./app
+      run: |
+        npm run test:coverage
+        
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        directory: ./app/coverage
+        
+    - name: Run ESLint
+      working-directory: ./app
+      run: |
+        npx eslint . --ext .js --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif || true
+        
+    - name: Upload ESLint results to GitHub Security
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: app/eslint-results.sarif
+        
+    - name: Security gate check
+      id: security-gate
+      run: |
+        # Check for critical vulnerabilities
+        if npm audit --audit-level=critical --json | jq '.metadata.vulnerabilities.critical' | grep -q '^[1-9]'; then
+          echo "Critical vulnerabilities found"
+          echo "passed=false" >> $GITHUB_OUTPUT
+        else
+          echo "No critical vulnerabilities found"
+          echo "passed=true" >> $GITHUB_OUTPUT
+        fi
+
+  # Stage 2: Container Build and Security Scanning
+  container-build:
+    name: Build & Scan Container
+    runs-on: ubuntu-latest
+    needs: code-analysis
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tag: ${{ steps.meta.outputs.tags }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Configure Google Cloud SDK
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+        
+    - name: Setup gcloud CLI
+      uses: google-github-actions/setup-gcloud@v2
+      
+    - name: Configure Docker to use gcloud as a credential helper
+      run: |
+        gcloud auth configure-docker
+        
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+        labels: |
+          org.opencontainers.image.title=Container Lifecycle Demo
+          org.opencontainers.image.description=Demo for enterprise container governance
+          lifecycle.stage=build
+          
+    - name: Build container image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile
+        target: production
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: |
+          BUILD_TIME=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+          GIT_COMMIT=${{ github.sha }}
+          VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ steps.meta.outputs.tags }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+        
+    - name: Upload Trivy scan results to GitHub Security
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+        
+    - name: Generate SBOM
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ steps.meta.outputs.tags }}
+        format: spdx-json
+        output-file: sbom.spdx.json
+        
+    - name: Upload SBOM artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: sbom
+        path: sbom.spdx.json
+        
+    - name: Container structure test
+      run: |
+        curl -LO https://storage.googleapis.com/container-structure-test/latest/container-structure-test-linux-amd64
+        chmod +x container-structure-test-linux-amd64
+        ./container-structure-test-linux-amd64 test --image ${{ steps.meta.outputs.tags }} --config security/container-structure-test.yaml
+        
+  # Stage 3: Compliance Validation
+  compliance-validation:
+    name: Compliance Check
+    runs-on: ubuntu-latest
+    needs: [code-analysis, container-build]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+        
+    - name: Check container compliance
+      run: |
+        # Run custom compliance checks
+        python3 scripts/compliance-check.py --image ${{ needs.container-build.outputs.image-tag }}
+
+  # Stage 4: Deployment to Google Cloud (GKE)
+  deploy-gke:
+    name: Deploy to GKE
+    runs-on: ubuntu-latest
+    needs: [code-analysis, container-build, compliance-validation]
+    if: github.ref == 'refs/heads/main' && (needs.code-analysis.outputs.security-passed == 'true' || github.event.inputs.force_deploy == 'true')
+    environment: ${{ github.event.inputs.environment || 'development' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Configure Google Cloud SDK
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+        
+    - name: Setup gcloud CLI
+      uses: google-github-actions/setup-gcloud@v2
+      
+    - name: Get GKE credentials
+      run: |
+        gcloud container clusters get-credentials "$GKE_CLUSTER" --zone "$GKE_ZONE"
+        
+    - name: Deploy to GKE
+      run: |
+        # Update deployment with new image
+        kubectl set image deployment/$DEPLOYMENT_NAME container-lifecycle-demo=${{ needs.container-build.outputs.image-tag }} -n default
+        
+        # Wait for rollout to complete
+        kubectl rollout status deployment/$DEPLOYMENT_NAME -n default --timeout=300s
+        
+        # Verify deployment
+        kubectl get services -o wide -n default
+        
+    - name: Run deployment tests
+      run: |
+        # Get service external IP and test endpoints
+        kubectl get services -n default
+        python3 scripts/deployment-test.py
+
+  # Stage 5: Security Monitoring and Compliance
+  post-deployment:
+    name: Post-Deployment Security
+    runs-on: ubuntu-latest
+    needs: [deploy-gke]
+    if: always() && needs.deploy-gke.result == 'success'
+    
+    steps:
+    - name: Runtime security scan
+      run: |
+        # Run runtime security checks
+        echo "Performing runtime security validation..."
+        
+    - name: Update image lifecycle metadata
+      run: |
+        # Update lifecycle tracking
+        gcloud container images add-tag ${{ needs.container-build.outputs.image-tag }} \
+          ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE }}:deployed-$(date +%Y%m%d)
+
+  # Stage 6: Cleanup and Lifecycle Management
+  lifecycle-cleanup:
+    name: Lifecycle Management
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    
+    steps:
+    - name: Cleanup old images
+      run: |
+        # Clean up images older than 30 days
+        gcloud container images list-tags ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE }} \
+          --filter="timestamp.datetime < '-P30D'" \
+          --format="get(digest)" | \
+          xargs -I {} gcloud container images delete ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE }}@{} --quiet
+          
+    - name: Generate compliance report
+      run: |
+        # Generate periodic compliance report
+        python3 scripts/generate-compliance-report.py

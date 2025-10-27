@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: container-lifecycle-demo-sa
+  namespace: container-lifecycle-demo
+  labels:
+    app: container-lifecycle-demo
+    security.policy: restricted
+  annotations:
+    description: "Service account for container lifecycle demo with minimal permissions"
+    security.policy/principle: least-privilege
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: container-lifecycle-demo-role
+  namespace: container-lifecycle-demo
+  labels:
+    app: container-lifecycle-demo
+rules:
+# Minimal permissions for application functionality
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+  resourceNames: []
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list"]
+  resourceNames: ["app-config"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+  resourceNames: ["app-secrets"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: container-lifecycle-demo-binding
+  namespace: container-lifecycle-demo
+  labels:
+    app: container-lifecycle-demo
+subjects:
+- kind: ServiceAccount
+  name: container-lifecycle-demo-sa
+  namespace: container-lifecycle-demo
+roleRef:
+  kind: Role
+  name: container-lifecycle-demo-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Network Policy for traffic isolation
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: container-lifecycle-demo-netpol
+  namespace: container-lifecycle-demo
+  labels:
+    app: container-lifecycle-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: container-lifecycle-demo
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from ingress controller
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 3000
+  # Allow traffic from monitoring namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 3000
+  # Allow internal communication between pods
+  - from:
+    - podSelector:
+        matchLabels:
+          app: container-lifecycle-demo
+    ports:
+    - protocol: TCP
+      port: 3000
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow HTTPS for external API calls
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  # Allow communication to Kubernetes API server
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: TCP
+      port: 443

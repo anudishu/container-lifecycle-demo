@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: container-lifecycle-demo
+  labels:
+    name: container-lifecycle-demo
+    environment: production
+    lifecycle.stage: runtime
+    security.policy: restricted
+    compliance.framework: enterprise
+  annotations:
+    description: "Namespace for container lifecycle management demonstration"
+    owner: "container-governance-team"
+    security.policy/pod-security-standard: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: container-lifecycle-quota
+  namespace: container-lifecycle-demo
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 4Gi
+    limits.cpu: "4"
+    limits.memory: 8Gi
+    count/pods: "10"
+    count/persistentvolumeclaims: "4"
+    count/services: "5"
+    count/secrets: "10"
+    count/configmaps: "10"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: container-lifecycle-limits
+  namespace: container-lifecycle-demo
+spec:
+  limits:
+  - type: Container
+    default:
+      memory: "512Mi"
+      cpu: "500m"
+    defaultRequest:
+      memory: "256Mi"
+      cpu: "250m"
+    max:
+      memory: "2Gi"
+      cpu: "1"
+    min:
+      memory: "128Mi"
+      cpu: "100m"
+  - type: Pod
+    max:
+      memory: "4Gi"
+      cpu: "2"
