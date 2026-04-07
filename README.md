@@ -140,19 +140,7 @@ python3 scripts/compliance-check.py --image container-lifecycle-demo:local
 
 This repo is structured around a typical flow: develop → build image → test → scan → push to registry → deploy → run → observe → update → eventually retire old images.
 
-```mermaid
-graph LR
-  A[Develop] --> B[Build]
-  B --> C[Test]
-  C --> D[Scan]
-  D --> E[Registry]
-  E --> F[Deploy]
-  F --> G[Runtime]
-  G --> H[Monitor]
-  H --> I[Update]
-  I --> B
-  G --> J[Retire / cleanup]
-```
+![Container lifecycle from develop through build, test, scan, registry, deploy, runtime, then monitor/update (loop to build) or retire/cleanup](lifecycle.png)
 
 **Stages (short):**
 
@@ -190,6 +178,7 @@ graph LR
 | `monitoring/prometheus.yml` | Example scrape config |
 | `security/container-structure-test.yaml` | Structure tests |
 | `scripts/` | Python utilities + `requirements.txt` |
+| `lifecycle.png` | Lifecycle diagram (see *Lifecycle at a glance*) |
 
 ## License
 
