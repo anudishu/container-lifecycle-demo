@@ -533,7 +533,7 @@ def main():
     
     # Print summary
     summary = report['summary']
-    print(f"\\nContainer Lifecycle Compliance Report")
+    print("\nContainer Lifecycle Compliance Report")
     print("=" * 50)
     print(f"Project: {args.project_id}")
     print(f"Total Repositories: {summary['total_repositories']}")
@@ -549,7 +549,7 @@ def main():
         for i, rec in enumerate(report['recommendations'][:5], 1):
             print(f"{i}. {rec}")
     
-    print(f"\\nFull report saved to: {args.output}")
+    print(f"\nFull report saved to: {args.output}")
 
 def generate_html_report(report: Dict) -> str:
     """Generate HTML report (simplified version)"""

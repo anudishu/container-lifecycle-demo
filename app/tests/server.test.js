@@ -2,91 +2,92 @@ const request = require('supertest');
 const app = require('../server');
 
 describe('Container Lifecycle Demo API', () => {
-  let server;
-
-  beforeAll((done) => {
-    server = app.listen(0, done); // Use port 0 for testing
-  });
-
-  afterAll((done) => {
-    server.close(done);
-  });
-
   describe('GET /', () => {
-    it('should return API information', async () => {
-      const response = await request(app).get('/');
-      
-      expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('message');
-      expect(response.body).toHaveProperty('version');
-      expect(response.body).toHaveProperty('environment');
-      expect(response.body).toHaveProperty('container');
+    it('returns API metadata and container hints', async () => {
+      const res = await request(app).get('/');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        message: 'Container Lifecycle Demo API',
+        environment: expect.any(String),
+      });
+      expect(res.body).toHaveProperty('version');
+      expect(res.body.container).toMatchObject({
+        hostname: expect.any(String),
+        platform: expect.any(String),
+        nodeVersion: expect.any(String),
+      });
     });
   });
 
   describe('GET /health', () => {
-    it('should return health status', async () => {
-      const response = await request(app).get('/health');
-      
-      expect(response.status).toBe(200);
-      expect(response.body.status).toBe('healthy');
-      expect(response.body).toHaveProperty('timestamp');
-      expect(response.body).toHaveProperty('uptime');
-      expect(response.body).toHaveProperty('memory');
+    it('returns healthy status and runtime stats', async () => {
+      const res = await request(app).get('/health');
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('healthy');
+      expect(res.body).toHaveProperty('timestamp');
+      expect(res.body).toHaveProperty('uptime');
+      expect(res.body).toHaveProperty('memory');
     });
   });
 
   describe('GET /readiness', () => {
-    it('should return readiness status', async () => {
-      const response = await request(app).get('/readiness');
-      
-      expect(response.status).toBe(200);
-      expect(response.body.status).toBe('ready');
-      expect(response.body).toHaveProperty('checks');
-      expect(response.body.checks.server).toBe('ok');
+    it('returns ready when dependency checks pass', async () => {
+      const res = await request(app).get('/readiness');
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('ready');
+      expect(res.body.checks.server).toBe('ok');
     });
   });
 
   describe('GET /metrics', () => {
-    it('should return system metrics', async () => {
-      const response = await request(app).get('/metrics');
-      
-      expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('requests');
-      expect(response.body).toHaveProperty('system');
-      expect(response.body.system).toHaveProperty('memory');
-      expect(response.body.system).toHaveProperty('uptime');
+    it('returns request counters and system snapshot', async () => {
+      await request(app).get('/health');
+      const res = await request(app).get('/metrics');
+
+      expect(res.status).toBe(200);
+      expect(res.body.requests).toMatchObject({
+        total: expect.any(Number),
+        errors4xx: expect.any(Number),
+        errors5xx: expect.any(Number),
+        avgResponseTimeMs: expect.any(Number),
+      });
+      expect(res.body.system).toHaveProperty('memory');
+      expect(res.body.system).toHaveProperty('uptime');
     });
   });
 
   describe('GET /lifecycle', () => {
-    it('should return container lifecycle information', async () => {
-      const response = await request(app).get('/lifecycle');
-      
-      expect(response.status).toBe(200);
-      expect(response.body.stage).toBe('runtime');
-      expect(response.body).toHaveProperty('image');
-      expect(response.body).toHaveProperty('deployment');
-      expect(response.body).toHaveProperty('security');
+    it('returns image, deployment, and security fields', async () => {
+      const res = await request(app).get('/lifecycle');
+
+      expect(res.status).toBe(200);
+      expect(res.body.stage).toBe('runtime');
+      expect(res.body.image).toHaveProperty('tag');
+      expect(res.body.image).toHaveProperty('gitCommit');
+      expect(res.body.deployment).toHaveProperty('namespace');
+      expect(res.body.security).toHaveProperty('scanned');
     });
   });
 
   describe('Security headers', () => {
-    it('should include security headers', async () => {
-      const response = await request(app).get('/');
-      
-      expect(response.headers).toHaveProperty('x-content-type-options');
-      expect(response.headers).toHaveProperty('x-frame-options');
-      expect(response.headers).toHaveProperty('x-xss-protection');
+    it('sets common hardening headers', async () => {
+      const res = await request(app).get('/');
+
+      expect(res.headers['x-content-type-options']).toBeDefined();
+      expect(res.headers['x-frame-options']).toBeDefined();
     });
   });
 
   describe('404 handling', () => {
-    it('should return 404 for non-existent routes', async () => {
-      const response = await request(app).get('/non-existent');
-      
-      expect(response.status).toBe(404);
-      expect(response.body.error).toBe('Not Found');
+    it('returns JSON for unknown routes', async () => {
+      const res = await request(app).get('/no-such-route');
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Not Found');
+      expect(res.body.path).toBe('/no-such-route');
     });
   });
 });

@@ -385,19 +385,19 @@ def main():
         json.dump(results, f, indent=2)
     
     # Print summary
-    print(f"\\nCompliance Check Results for {args.image}")
+    print(f"\nCompliance Check Results for {args.image}")
     print("=" * 60)
     print(f"Overall Status: {results['overall_status']}")
     print(f"Security Score: {results['security_score']}/100")
     print()
     
     for check_name, result in results['checks'].items():
-        status_emoji = "✅" if result['status'] == 'PASS' else "⚠️" if result['status'] == 'WARN' else "❌"
-        print(f"{status_emoji} {check_name.replace('_', ' ').title()}: {result['status']}")
+        mark = {'PASS': '[ok]', 'WARN': '[warn]', 'FAIL': '[fail]'}.get(result['status'], '[?]')
+        print(f"{mark} {check_name.replace('_', ' ').title()}: {result['status']}")
         print(f"   {result['message']}")
     
     if results['recommendations']:
-        print("\\nRecommendations:")
+        print("\nRecommendations:")
         for i, rec in enumerate(results['recommendations'], 1):
             print(f"{i}. {rec}")
     
@@ -407,7 +407,7 @@ def main():
     elif results['overall_status'] == 'PASS_WITH_WARNINGS' and args.fail_on_warnings:
         sys.exit(1)
     elif results['security_score'] < args.min_score:
-        print(f"\\nSecurity score {results['security_score']} below minimum {args.min_score}")
+        print(f"\nSecurity score {results['security_score']} below minimum {args.min_score}")
         sys.exit(1)
     else:
         sys.exit(0)

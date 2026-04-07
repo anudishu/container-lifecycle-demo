@@ -76,7 +76,7 @@ spec:
       
       containers:
       - name: container-lifecycle-demo
-        image: gcr.io/probable-cove-474504-p0/container-lifecycle-demo:latest
+        image: gcr.io/YOUR_GCP_PROJECT/container-lifecycle-demo:latest
         imagePullPolicy: Always
         
         # Security Context for Container

@@ -128,12 +128,11 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     ports:
-      - "3001:3000"
+      - "3002:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
       - grafana_data:/var/lib/grafana
-      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning
     networks:
       - app-network
     profiles:

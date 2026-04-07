@@ -104,6 +104,8 @@ dist/
 # Gatsby files
 .cache/
 public/
+!app/public/
+!app/public/**
 
 # Storybook build outputs
 .out
@@ -323,10 +325,6 @@ cypress/screenshots/
 !.env.example
 !config.example.json
 !secrets.example.yaml
-
-# Allow documentation about security
-!docs/security/
-!docs/SECURITY.md
 
 # =============================================================================
 # END OF GITIGNORE

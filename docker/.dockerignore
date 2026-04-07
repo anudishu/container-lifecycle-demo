@@ -131,7 +131,6 @@ Jenkinsfile
 
 # Documentation
 *.md
-docs/
 
 # Docker
 Dockerfile*

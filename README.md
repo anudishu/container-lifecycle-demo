@@ -1,376 +1,196 @@
-# Container Lifecycle Management POC
+# Container lifecycle demo
 
-A comprehensive demonstration of enterprise-grade container image lifecycle management using GitHub Actions, Docker, Kubernetes, and Google Cloud Platform.
+End-to-end sample: a small Node.js API, Docker, optional GKE, GitHub Actions, and Python helpers for compliance-style checks. The app stays small so the pipeline and ops pieces stay easy to read.
 
-## 🎯 Project Overview
+## Prerequisites
 
-This project demonstrates complete container lifecycle management with enterprise security, governance, and compliance practices:
+| Tool | Notes |
+|------|--------|
+| Node.js 18+ | App and CI tests |
+| Docker | Local image build / Compose |
+| `gcloud`, `kubectl` | Only if you use GCP/GKE |
+| Python 3.8+ | `scripts/*.py` (see [Python scripts](#python-scripts)) |
+| Git | Clone and push |
 
-- ✅ **Secure baseline image creation** with multi-stage Docker builds
-- ✅ **Automated CI/CD pipeline** with GitHub Actions
-- ✅ **Container security scanning** and vulnerability management  
-- ✅ **Policy enforcement** and compliance validation
-- ✅ **Complete lifecycle management** from development to retirement
-- ✅ **Google Cloud deployment** using GKE (Google Kubernetes Engine)
-- ✅ **Monitoring and observability** with Prometheus integration
+Optional: **Trivy** (image scan), **Cosign** (signing), **Syft** (SBOM), **container-structure-test** (structure tests; CI downloads it).
 
-## 🏗️ Architecture
+## Quick start (local)
 
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Developer     │───▶│  GitHub Actions  │───▶│  Google Cloud   │
-│   Commits Code  │    │  CI/CD Pipeline  │    │      GKE        │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-                              │                        │
-                              ▼                        ▼
-                       ┌──────────────────┐    ┌─────────────────┐
-                       │ Container Registry│    │   Monitoring    │
-                       │ Security Scanning │    │ & Compliance    │
-                       └──────────────────┘    └─────────────────┘
-```
-
-## 📁 Project Structure & File Descriptions
-
-### 🚀 **Application Layer**
-```
-app/
-├── package.json          # Node.js dependencies and scripts
-├── server.js            # Express.js application with security features
-└── tests/
-    └── server.test.js   # Comprehensive test suite (7 test cases)
-```
-
-### 🐳 **Container Layer**
-```
-docker/
-├── Dockerfile           # Multi-stage build with security scanning
-├── .dockerignore       # Optimized build context
-└── docker-compose.yml  # Local development environment
-```
-
-### ⚙️ **CI/CD Pipeline**
-```
-.github/workflows/
-└── container-lifecycle.yml  # Complete GitHub Actions pipeline
-    ├── Code Analysis        # Security audit & dependency checks
-    ├── Container Build      # Multi-stage Docker build
-    ├── Security Scan        # Trivy vulnerability assessment
-    ├── Compliance Check     # Custom security validation
-    └── GKE Deployment      # Automated deployment to Google Cloud
-```
-
-### ☸️ **Kubernetes Infrastructure**
-```
-k8s/
-├── namespace.yaml       # Resource quotas and limits
-├── deployment.yaml      # Secure pod deployment (3 replicas)
-├── service.yaml         # Load balancer and ingress configuration
-└── rbac.yaml           # Security policies and network rules
-```
-
-### 🛡️ **Security & Governance**
-```
-security/
-└── container-structure-test.yaml  # Container security validation
-```
-
-### 📊 **Monitoring & Observability**
-```
-monitoring/
-└── prometheus.yml       # Metrics collection configuration
-```
-
-### 🔧 **Automation Scripts**
-```
-scripts/
-├── setup.sh                    # Automated GCP infrastructure setup
-├── compliance-check.py         # Security compliance validation
-├── deployment-test.py          # Application testing suite
-└── generate-compliance-report.py  # Comprehensive reporting
-```
-
-### 📖 **Documentation**
-```
-docs/
-├── GETTING_STARTED.md         # Step-by-step setup guide
-└── CONTAINER_LIFECYCLE.md     # Complete lifecycle documentation
-```
-
-### 🔐 **Security Files**
-```
-.gitignore                     # Comprehensive credential protection
-github-actions-key.json       # Service account key (PROTECTED)
-```
-
-## 🚀 **Complete Deployment Guide**
-
-### 📋 **Prerequisites**
-
-**Required Tools:**
-- **Docker Desktop** (v4.0+)
-- **Google Cloud SDK** (`gcloud` CLI)
-- **kubectl** (Kubernetes CLI) 
-- **Node.js** (v18+)
-- **Git**
-- **GitHub account**
-- **Google Cloud Project** with billing enabled
-
-**Install Tools:**
 ```bash
-# macOS (using Homebrew)
-brew install --cask docker
-brew install --cask google-cloud-sdk
-brew install kubectl node git
-
-# Verify installations
-docker --version
-gcloud --version
-kubectl version --client
-node --version
-```
-
-### 🔧 **Step 1: Local Development & Testing**
-
-**1.1 Clone and Setup:**
-```bash
-# Clone repository
-git clone https://github.com/anudishu/container-lifecycle-demo.git
-cd container-lifecycle-demo
-
-# Install dependencies
-cd app && npm install
-
-# Run tests
+cd app
+npm ci
 npm test
-# ✅ Expected: 7 tests passed
-
-# Start application locally
+npm run lint
 npm start
-# ✅ Expected: Server running on port 3000
 ```
 
-**1.2 Test Local Application:**
+- JSON API root: `http://localhost:3000/`
+- Browser helper: `http://localhost:3000/index.html`
+
+## Docker
+
+From the repository root:
+
 ```bash
-# Test health endpoint
-curl http://localhost:3000/health
-
-# Test main API
-curl http://localhost:3000/
-
-# Test lifecycle endpoint
-curl http://localhost:3000/lifecycle
-```
-
-**1.3 Build and Test Docker Image:**
-```bash
-# Build Docker image
 docker build -f docker/Dockerfile --target production -t container-lifecycle-demo:local .
-
-# Run container locally
-docker run -d --name test-container -p 3001:3000 container-lifecycle-demo:local
-
-# Test containerized application
-curl http://localhost:3001/health
-
-# Cleanup
-docker stop test-container && docker rm test-container
+docker run --rm -p 3000:3000 container-lifecycle-demo:local
 ```
 
-### ☁️ **Step 2: Google Cloud Setup**
+Compose (from `docker/`):
 
-**2.1 Configure GCP Project:**
 ```bash
-# Set project (replace with your project ID)
-export PROJECT_ID="probable-cove-474504-p0"
-gcloud config set project $PROJECT_ID
-
-# Enable required APIs
-gcloud services enable \
-  container.googleapis.com \
-  containerregistry.googleapis.com \
-  compute.googleapis.com
+cd docker && docker compose up --build app
 ```
 
-**2.2 Create Service Account for GitHub Actions:**
+Optional monitoring profile (Prometheus + Grafana; Grafana on host port **3002**):
+
 ```bash
-# Create service account
-gcloud iam service-accounts create github-actions-sa \
-  --description="Service account for GitHub Actions CI/CD" \
-  --display-name="GitHub Actions SA"
-
-# Assign required roles
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:github-actions-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/container.admin"
-
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:github-actions-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/storage.admin"
-
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:github-actions-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/compute.admin"
-
-# Create service account key
-gcloud iam service-accounts keys create github-actions-key.json \
-  --iam-account=github-actions-sa@$PROJECT_ID.iam.gserviceaccount.com
+cd docker && docker compose --profile monitoring up -d prometheus grafana
 ```
 
-### 🔐 **Step 3: GitHub Repository Setup**
+Repo config: `monitoring/prometheus.yml`. There is no `k8s/monitoring/` path—deploy Prometheus/Grafana yourself or use Compose.
 
-**3.1 Configure GitHub Secrets:**
+## Google Cloud (condensed)
 
-Go to: `https://github.com/YOUR-USERNAME/container-lifecycle-demo/settings/secrets/actions`
-
-Add these secrets:
-
-| Secret Name | Value |
-|-------------|-------|
-| `GCP_PROJECT_ID` | `probable-cove-474504-p0` |
-| `GCP_SA_KEY` | *(Entire content of `github-actions-key.json`)* |
-
-**3.2 Push Code to Trigger Pipeline:**
 ```bash
-# Add all changes
-git add .
+gcloud auth login
+export PROJECT_ID="your-gcp-project-id"
+gcloud config set project "$PROJECT_ID"
 
-# Commit with descriptive message
-git commit -m "Deploy container lifecycle management to GCP"
-
-# Push to trigger CI/CD pipeline
-git push origin main
+gcloud services enable container.googleapis.com containerregistry.googleapis.com compute.googleapis.com
 ```
 
-### ☸️ **Step 4: GKE Cluster Deployment** (Optional)
+Create a GKE cluster (example—sizes/zones are yours to tune):
 
-**4.1 Automated Setup:**
 ```bash
-# Run automated setup (creates cluster + deploys app)
-./scripts/setup.sh --project-id probable-cove-474504-p0
-```
-
-**4.2 Manual GKE Setup:**
-```bash
-# Create GKE cluster
 gcloud container clusters create container-lifecycle-cluster \
   --zone us-central1-a \
   --num-nodes 3 \
-  --enable-autoscaling \
-  --min-nodes 1 \
-  --max-nodes 5 \
+  --enable-autoscaling --min-nodes 1 --max-nodes 5 \
   --machine-type n1-standard-2
 
-# Get cluster credentials
 gcloud container clusters get-credentials container-lifecycle-cluster --zone us-central1-a
-
-# Deploy application
-kubectl apply -f k8s/
-
-# Check deployment status
-kubectl get pods -n container-lifecycle-demo
-kubectl get services -n container-lifecycle-demo
 ```
 
-## 📊 **Monitoring & Verification**
+## Kubernetes
 
-### ✅ **Pipeline Verification:**
-- Visit: `https://github.com/YOUR-USERNAME/container-lifecycle-demo/actions`
-- Monitor: "Container Lifecycle Management" workflow
-- Check: All stages complete successfully
+1. Set the image in `k8s/deployment.yaml` (placeholder: `gcr.io/YOUR_GCP_PROJECT/container-lifecycle-demo:latest`).
+2. Apply in order:
 
-### ✅ **Application Verification:**
 ```bash
-# Get external IP (if deployed to GKE)
-kubectl get svc -n container-lifecycle-demo container-lifecycle-demo-lb
-
-# Test deployed application
-export APP_URL="http://EXTERNAL-IP"
-curl $APP_URL/health
-curl $APP_URL/lifecycle
-
-# Run deployment tests
-python3 scripts/deployment-test.py --url $APP_URL
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/rbac.yaml
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
 ```
 
-### ✅ **Security Verification:**
+Match `imagePullSecrets` / workload identity to how your cluster pulls from GCR or Artifact Registry.
+
+Verify:
+
 ```bash
-# Run compliance check
-python3 scripts/compliance-check.py --image gcr.io/probable-cove-474504-p0/container-lifecycle-demo:latest
-
-# Generate compliance report
-python3 scripts/generate-compliance-report.py --project-id probable-cove-474504-p0
+kubectl get deployments,pods -n container-lifecycle-demo
+kubectl rollout status deployment/container-lifecycle-demo -n container-lifecycle-demo
 ```
 
-## 🔄 **Container Lifecycle Stages**
+## GitHub Actions and secrets
 
-| Stage | Description | Tools & Processes |
-|-------|-------------|-------------------|
-| **1. Development** | Secure coding & local testing | Node.js, Jest, ESLint, Local Docker |
-| **2. Build** | Multi-stage Docker builds | Docker, Alpine Linux, Non-root user |
-| **3. Test** | Automated testing & validation | Jest, Supertest, Container structure tests |
-| **4. Scan** | Security & vulnerability scanning | Trivy, npm audit, SBOM generation |
-| **5. Registry** | Secure image storage | Google Container Registry, Image signing |
-| **6. Deploy** | Policy-compliant deployment | Kubernetes, Security contexts, RBAC |
-| **7. Runtime** | Monitoring & security enforcement | Prometheus, Health checks, Log aggregation |
-| **8. Retire** | Automated cleanup & archival | Lifecycle policies, Storage optimization |
+| Secret | Purpose |
+|--------|---------|
+| `GCP_PROJECT_ID` | GCP project id |
+| `GCP_SA_KEY` | Service account JSON (push images, GKE deploy, scheduled jobs) |
 
-## 🛡️ **Security Features**
+Typical IAM roles for that account (adjust to your org): **Container Admin** (or narrower GKE deploy), **Storage Admin** (or Artifact Registry writer), **Compute** as needed for your setup.
 
-- ✅ **Multi-stage builds** - Minimal attack surface
-- ✅ **Non-root execution** - Container security
-- ✅ **Read-only filesystem** - Runtime protection  
-- ✅ **Security scanning** - Vulnerability assessment
-- ✅ **SBOM generation** - Supply chain transparency
-- ✅ **Network policies** - Traffic isolation
-- ✅ **Resource limits** - Resource governance
-- ✅ **Credential protection** - Comprehensive .gitignore
+The workflow builds `gcr.io/$PROJECT_ID/container-lifecycle-demo`, pins references by **digest** where possible, and deploys into namespace **`container-lifecycle-demo`**. Without secrets, the Node test/lint job can still run; GCP-dependent jobs will fail until configured.
 
-## 📈 **Compliance & Reporting**
+## Environment variables (app)
 
-The project includes automated compliance reporting:
+| Variable | Purpose |
+|----------|---------|
+| `NODE_ENV` | `development` / `production` |
+| `PORT` | Listen port (default `3000`) |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins |
+| `IMAGE_TAG`, `IMAGE_DIGEST`, `BUILD_TIME`, `GIT_COMMIT`, `VERSION` | Shown on `/lifecycle` when set |
+| `K8S_NAMESPACE`, `K8S_POD_NAME` | Often from Kubernetes downward API in manifests |
+| `SECURITY_SCANNED`, `VULNERABILITIES`, `COMPLIANCE_STATUS` | Optional `/lifecycle` metadata |
 
-- **Daily**: Security scan results
-- **Weekly**: Vulnerability assessments  
-- **Monthly**: Comprehensive compliance reports
-- **On-demand**: Custom compliance checks
+## Python scripts
 
-## 🚨 **Troubleshooting**
+Install once:
 
-### Common Issues:
-
-**1. Docker Build Fails:**
 ```bash
-# Clean Docker cache
-docker system prune -a
-docker build --no-cache -f docker/Dockerfile .
+pip3 install -r scripts/requirements.txt
 ```
 
-**2. GKE Deployment Issues:**
+| Script | Purpose |
+|--------|---------|
+| `scripts/deployment-test.py` | HTTP smoke tests: `--url https://your-service` |
+| `scripts/compliance-check.py` | Image checks: `--image gcr.io/PROJECT/IMG@sha256:...` (needs Docker/Trivy locally where used) |
+| `scripts/generate-compliance-report.py` | Registry-oriented report: `--project-id YOUR_PROJECT` |
+
+Example:
+
 ```bash
-# Check cluster status
-kubectl get nodes
-kubectl describe pod POD-NAME -n container-lifecycle-demo
+python3 scripts/deployment-test.py --url http://localhost:3000
+python3 scripts/compliance-check.py --image container-lifecycle-demo:local
 ```
 
-**3. GitHub Actions Failures:**
-- Verify GitHub secrets are configured correctly
-- Check service account permissions in GCP
-- Review workflow logs in GitHub Actions tab
+## Lifecycle at a glance
 
-## 🔗 **Additional Resources**
+This repo is structured around a typical flow: develop → build image → test → scan → push to registry → deploy → run → observe → update → eventually retire old images.
 
-- **Detailed Setup**: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)
-- **Lifecycle Guide**: [docs/CONTAINER_LIFECYCLE.md](docs/CONTAINER_LIFECYCLE.md)
-- **Complete Deployment**: [DEPLOYMENT.md](DEPLOYMENT.md)
+```mermaid
+graph LR
+  A[Develop] --> B[Build]
+  B --> C[Test]
+  C --> D[Scan]
+  D --> E[Registry]
+  E --> F[Deploy]
+  F --> G[Runtime]
+  G --> H[Monitor]
+  H --> I[Update]
+  I --> B
+  G --> J[Retire / cleanup]
+```
 
----
+**Stages (short):**
 
-## 📊 **Project Statistics**
+1. **Develop** – `npm run dev`, `npm test`, `npm run lint`, `npm audit`.
+2. **Build** – Multi-stage `docker/Dockerfile`; non-root user in final image.
+3. **Test** – Jest in `app/`; optional container-structure-test via `security/container-structure-test.yaml`.
+4. **Scan** – Trivy/npm audit in CI; optional local Trivy.
+5. **Registry** – Push to GCR (or equivalent); tag and track digests.
+6. **Deploy** – `k8s/` manifests, rolling updates, probes on `/health` and `/readiness`.
+7. **Runtime** – App exposes `/metrics` (in-process counters) and JSON endpoints.
+8. **Monitor** – Prometheus scrape config example under `monitoring/`.
+9. **Update** – New build through the same pipeline; `kubectl set image` or GitOps as you prefer.
+10. **Retire** – Workflow schedule includes image cleanup patterns; tune retention to your policy.
 
-- **Languages**: JavaScript, Python, Bash, YAML
-- **Files**: 22 files, 5000+ lines of code
-- **Tests**: 7 comprehensive test cases
-- **Security Checks**: 9 validation categories
-- **Deployment Targets**: Local Docker, GKE, Container Registry
+## Troubleshooting
 
-**Built with ❤️ for enterprise container governance and lifecycle management**
+| Issue | What to try |
+|-------|----------------|
+| GKE / quota errors | `gcloud compute project-info describe --project=$PROJECT_ID` |
+| Docker build flaky | `docker system prune -a` then rebuild with `--no-cache` |
+| Pod not starting | `kubectl describe pod -n container-lifecycle-demo POD` and `kubectl logs` |
+| App in cluster | `kubectl logs -l app=container-lifecycle-demo -n container-lifecycle-demo` |
+| Trivy DB | `trivy image --download-db-only` |
+| CI security gate | Fix critical `npm audit` issues in `app/` or adjust policy intentionally |
+
+## Project layout
+
+| Path | Purpose |
+|------|---------|
+| `app/server.js` | HTTP API |
+| `app/tests/` | Jest + Supertest |
+| `app/public/index.html` | Simple UI |
+| `docker/` | Dockerfile, Compose |
+| `k8s/` | Kubernetes manifests |
+| `monitoring/prometheus.yml` | Example scrape config |
+| `security/container-structure-test.yaml` | Structure tests |
+| `scripts/` | Python utilities + `requirements.txt` |
+
+## License
+
+MIT (see `app/package.json`).

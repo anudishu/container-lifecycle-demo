@@ -1,0 +1,2 @@
+# Used by deployment-test.py (HTTP checks against a running service).
+requests>=2.31.0,<3

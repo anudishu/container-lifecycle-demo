@@ -13,7 +13,6 @@ import time
 import sys
 import logging
 from typing import Dict, List, Tuple, Optional
-from urllib.parse import urlparse
 import subprocess
 
 # Configure logging
@@ -305,27 +304,27 @@ class DeploymentTester:
             'success_rate': len(response_times) / (len(response_times) + failed_requests)
         }
         
-        # Performance thresholds
-        if avg_response_time > 1000:  # 1 second threshold
-            self.results['tests']['performance'] = {
-                'status': 'WARN',
-                'message': f'Average response time ({avg_response_time:.2f}ms) exceeds threshold',
-                'metrics': self.results['performance_metrics']
-            }
-        elif avg_response_time > 2000:  # 2 second fail threshold
+        # Performance thresholds (fail before warn so severe latency is not masked)
+        if avg_response_time > 2000:
             self.results['tests']['performance'] = {
                 'status': 'FAIL',
                 'message': f'Average response time ({avg_response_time:.2f}ms) unacceptable',
-                'metrics': self.results['performance_metrics']
+                'metrics': self.results['performance_metrics'],
             }
             return False
-        else:
+        if avg_response_time > 1000:
             self.results['tests']['performance'] = {
-                'status': 'PASS',
-                'message': f'Performance acceptable (avg: {avg_response_time:.2f}ms)',
-                'metrics': self.results['performance_metrics']
+                'status': 'WARN',
+                'message': f'Average response time ({avg_response_time:.2f}ms) exceeds 1s threshold',
+                'metrics': self.results['performance_metrics'],
             }
-        
+            return True
+
+        self.results['tests']['performance'] = {
+            'status': 'PASS',
+            'message': f'Performance acceptable (avg: {avg_response_time:.2f}ms)',
+            'metrics': self.results['performance_metrics'],
+        }
         return True
     
     def test_kubernetes_deployment(self) -> bool:
@@ -488,18 +487,18 @@ def main():
         json.dump(results, f, indent=2)
     
     # Print summary
-    print(f"\\nDeployment Test Results for {base_url}")
+    print(f"\nDeployment Test Results for {base_url}")
     print("=" * 60)
     print(f"Overall Status: {results['overall_status']}")
     print()
     
     for test_name, result in results['tests'].items():
-        status_emoji = "✅" if result['status'] == 'PASS' else "⚠️" if result['status'] == 'WARN' else "❌"
-        print(f"{status_emoji} {test_name.replace('_', ' ').title()}: {result['status']}")
+        mark = {'PASS': '[ok]', 'WARN': '[warn]', 'FAIL': '[fail]'}.get(result['status'], '[?]')
+        print(f"{mark} {test_name.replace('_', ' ').title()}: {result['status']}")
         print(f"   {result['message']}")
     
     if 'performance_metrics' in results and results['performance_metrics']:
-        print("\\nPerformance Metrics:")
+        print("\nPerformance Metrics:")
         metrics = results['performance_metrics']
         print(f"   Average Response Time: {metrics['average_response_time_ms']:.2f}ms")
         print(f"   Success Rate: {metrics['success_rate']*100:.1f}%")
